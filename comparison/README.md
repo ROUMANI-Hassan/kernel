@@ -78,55 +78,50 @@ flowchart TB
 A hybrid system keeps some components in the kernel and others in user space.
 The failure boundary depends on where the faulty component runs.
 
-## What the Linux example tests
+## Current monolithic examples
 
-The file `monolithic/kernel_module/memory_driver.c` is a real kernel module.
-It asks `kmalloc` for one physically contiguous memory block.
+This study now keeps only two small modules. They are separated so each file
+has one clear purpose.
 
-The module has two parameters:
+| Folder | Purpose | Expected result |
+|---|---|---|
+| `kernel_module_safe/` | Allocate and release one page correctly | Linux continues normally |
+| `kernel_module_unsafe/` | Use the invalid result of a failed 5 MiB allocation | A kernel oops occurs |
 
-- `memory_mb`: requested memory in MiB.
-- `unsafe_on_failure`: when set to `1`, deliberately writes through `NULL`
-  after a failed allocation. This is allowed only when a hypervisor is detected.
+The unsafe module is intentionally destructive. It checks the CPU hypervisor
+flag and refuses to run when no virtual machine is detected. This safety check
+does not replace a VM snapshot.
 
-The correct code checks whether `kmalloc` returned `NULL` and returns `-ENOMEM`.
-The unsafe path demonstrates what can happen when driver code ignores that
-error.
+## Create the test VM
 
-## Complete setup from a new VM
+Download the **64-bit PC (AMD64) desktop image** from the
+[official Lubuntu 24.04 LTS page](https://download.cdimage.ubuntu.com/lubuntu/releases/24.04/release/).
+Choose `lubuntu-24.04.4-desktop-amd64.iso`.
 
-### 1. Download Lubuntu and create the VM
-
-Install VirtualBox and download the **64-bit PC (AMD64) desktop image** from the
-[official Lubuntu 24.04 LTS download page](https://download.cdimage.ubuntu.com/lubuntu/releases/24.04/release/).
-Choose `lubuntu-24.04.4-desktop-amd64.iso`, not the torrent, manifest, or server
-image.
-
-From this `comparison` directory, run:
+From the `comparison` folder on the Linux host:
 
 ```bash
 ./scripts/create_lubuntu_vm.sh ~/Downloads/lubuntu-24.04.4-desktop-amd64.iso
 ```
 
-The script creates `Kernel-Monolithic-Lab`, gives it 4 GiB of RAM and two CPUs,
-registers this project as a permanent read-only shared folder, and opens the VM.
+The script creates the VM and registers the current `comparison` folder as the
+read-only shared folder `kernel-comparison`. If the VM already exists, first
+shut it down completely. Then run these commands from the `comparison` folder
+on the host (Ensure VM is powered off):
 
-The error `Could not find a registered machine named Kernel-Monolithic-Lab`
-means a shared-folder command was run before the VM was created. Run the
-creation script first.
+```bash
+VBoxManage list vms
+VBoxManage sharedfolder remove "Kernel-Monolithic-Lab" --name kernel-comparison 2>/dev/null || true
+VBoxManage sharedfolder add "Kernel-Monolithic-Lab" --name kernel-comparison --hostpath "$PWD" --readonly --automount
+```
 
-### 2. Install Lubuntu
+`VBoxManage list vms` shows the exact VM name. Replace
+`Kernel-Monolithic-Lab` in the next two commands if your VM has a different
+name. VirtualBox cannot change a permanent shared folder while the VM is
+running or saved.
 
-In the VirtualBox window:
-
-1. Select **Try or Install Lubuntu**.
-2. Open **Install Lubuntu**.
-3. Choose **Erase disk**. This erases only the VM's virtual disk.
-4. Finish the installation and restart Lubuntu.
-
-### 3. Install Guest Additions support in Lubuntu
-
-Open a terminal with `Ctrl+Alt+T` and run:
+In VirtualBox, install Lubuntu on the VM's virtual disk. After installation,
+open a Lubuntu terminal and install shared-folder support:
 
 ```bash
 sudo apt update
@@ -135,163 +130,119 @@ sudo usermod -aG vboxsf "$USER"
 sudo reboot
 ```
 
-In the VM menu, enable **Devices > Shared Clipboard > Bidirectional**. In a
-Linux terminal, paste with `Ctrl+Shift+V`.
-
-The shared folder should appear at:
+After the reboot, the project should appear automatically inside the VM at:
 
 ```text
 /media/sf_kernel-comparison
 ```
 
-If it does not appear, mount the registered share:
+Check it with:
+
+```bash
+ls /media/sf_kernel-comparison
+```
+
+If that folder is missing, mount the share manually inside the VM:
 
 ```bash
 sudo mkdir -p /mnt/kernel-comparison
-sudo mount -t vboxsf -o ro kernel-comparison /mnt/kernel-comparison
+sudo mount -t vboxsf kernel-comparison /mnt/kernel-comparison
+ls /mnt/kernel-comparison
 ```
 
-`No such file or directory` from `mount.vboxsf` means VirtualBox does not have a
-share named `kernel-comparison`. Shut down the VM and, from this directory on
-the host, register it using the current project path:
+For the remaining commands, replace `/media/sf_kernel-comparison` with
+`/mnt/kernel-comparison` if you used the manual mount.
+
+The shared folder is read-only, but compilation creates new files. Install the
+compiler and kernel headers, then copy the module folders into the VM user's
+home directory:
 
 ```bash
-VBoxManage sharedfolder add Kernel-Monolithic-Lab \
-  --name kernel-comparison \
-  --hostpath "$PWD" \
-  --readonly --automount
+sudo apt update
+sudo apt install -y build-essential linux-headers-$(uname -r)
+rm -rf ~/kernel-modules
+mkdir -p ~/kernel-modules
+cp -r /media/sf_kernel-comparison/monolithic/kernel_module_safe ~/kernel-modules/
+cp -r /media/sf_kernel-comparison/monolithic/kernel_module_unsafe ~/kernel-modules/
 ```
 
-Then restart the VM. The creation script normally performs this step already.
+The copies under `~/kernel-modules` are writable. You can compile and modify
+them directly inside the VM without remounting the shared folder.
 
-### 4. Copy and compile the module in Lubuntu
+## Safe module
 
-```bash
-cd ~
-rm -rf ~/memory-driver
-sudo cp -r /media/sf_kernel-comparison/monolithic/kernel_module ~/memory-driver
-sudo chown -R "$USER:$USER" ~/memory-driver
-cd ~/memory-driver
-sudo apt install -y linux-headers-$(uname -r) build-essential
-make
-```
-
-| Command | Meaning |
-|---|---|
-| `chown ...` | Gives the logged-in user ownership of the copy |
-| `linux-headers-$(uname -r)` | Installs headers matching the running kernel |
-| `build-essential` | Installs the compiler and build tools |
-| `make` | Builds `memory_driver.ko` using the kernel build system |
-
-## Test 1: normal driver operation
-
-```bash
-sudo insmod ./memory_driver.ko memory_mb=1
-sudo dmesg | tail -n 10
-sudo rmmod memory_driver
-```
-
-| Command | Meaning |
-|---|---|
-| `insmod` | Loads the `.ko` file into the running kernel |
-| `memory_mb=1` | Requests 1 MiB through the module parameter |
-| `dmesg` | Reads messages written to the kernel log |
-| `tail -n 10` | Shows only the newest ten log lines |
-| `rmmod` | Frees the buffer and unloads the module |
-
-The expected log says that 1 MiB was requested, allocated, and initialized.
-
-## Check the configured `kmalloc` ceiling
-
-The module logs the kernel's `KMALLOC_MAX_SIZE` whenever it loads. After Test 1,
-display it with one command:
-
-```bash
-sudo dmesg | grep 'kernel kmalloc ceiling' | tail -n 1
-```
-
-This is the compile-time ceiling for one `kmalloc` request. It is not the total
-memory available to a driver. A smaller allocation can still fail when a large
-enough contiguous block is unavailable.
-
-In the observed VM, a request of 5 MiB failed. The module uses
-`__GFP_NORETRY`, which asks Linux to return failure without aggressive memory
-recovery. Test the safe failure with:
-
-```bash
-sudo insmod ./memory_driver.ko memory_mb=5
-sudo dmesg | tail -n 10
-```
-
-The expected result is `Cannot allocate memory`, and the log should say
-`failure handled safely with -ENOMEM`.
-
-## Test 2: faulty driver access
-
-Run the VM-only unsafe test:
-
-```bash
-sudo insmod ./memory_driver.ko memory_mb=5 unsafe_on_failure=1
-```
-
-The allocation fails, the teaching code writes through `NULL`, and the CPU
-raises a kernel fault. Linux records a kernel oops. The `insmod` command may be
-shown as `Killed` because module initialization was executing in that task's
-system-call context. The driver is not a separate user process.
-
-Linux may continue after this oops, but the kernel is tainted and its state is
-not guaranteed to be safe. In our test, Linux killed the current `insmod` task
-and the rest of the guest continued running. The module checks the CPU
-hypervisor flag before unsafe mode. If no virtual machine is detected, it
-returns `Operation not permitted`.
-
-## Code-reading experiment: removing the safety check
-
-The safe branch in `memory_driver.c` is:
+The complete code is in
+`monolithic/kernel_module_safe/safe_driver.c`. Its main logic is:
 
 ```c
-if (!unsafe_on_failure) {
-    pr_info("memory_driver: failure handled safely with -ENOMEM\n");
+buffer = kmalloc(PAGE_SIZE, GFP_KERNEL);
+if (!buffer)
     return -ENOMEM;
-}
 ```
 
-Commenting out this branch makes a failed allocation continue toward the
-invalid access. Linux may kill the current `insmod` task and continue after the
-oops. The supported and clearer test is to leave the code unchanged and pass
-`unsafe_on_failure=1`.
+It asks for one page and checks the result. Build and run it inside the VM:
 
-## Common messages
+```bash
+cd ~/kernel-modules/kernel_module_safe
+make
+sudo insmod ./safe_driver.ko
+sudo dmesg | tail -n 5
+sudo rmmod safe_driver
+```
 
-- `Cannot allocate memory`: the module returned `-ENOMEM` safely.
-- `Killed`: the current `insmod` task was terminated; inspect `dmesg` to learn
-  whether this was an oops or an OOM event.
-- `File exists`: the module is already loaded; run `sudo rmmod memory_driver`.
-- `module verification failed`: the module is unsigned; Linux marks the test
-  kernel tainted but can still load it.
-- `Skipping BTF generation`: optional debugging information was unavailable.
-- `vboxsf: Unknown parameter 'tag'`: Guest Additions and VirtualBox have
-  different versions; it is unrelated to this module.
+- `make` builds the loadable module.
+- `insmod` loads it into the running kernel.
+- `dmesg` shows the messages written by the module.
+- `rmmod` unloads it and releases the allocated page.
 
-## Project status
+## Unsafe module
 
-The monolithic Linux test is the only implemented example. Future work will
-create equivalent microkernel and hybrid tests so the same fault can be
-compared across different isolation boundaries.
+The complete code is in
+`monolithic/kernel_module_unsafe/unsafe_driver.c`. Its main logic is:
 
-## License and attribution
+```c
+if (!boot_cpu_has(X86_FEATURE_HYPERVISOR))
+    return -EPERM;
 
-This project is available under the MIT License. You may use, copy, modify, and
-distribute it, including for commercial work. Copies or substantial portions
-must keep the copyright and license notice so that credit remains with Hassan
-Roumani and the original repository. See the repository [LICENSE](../LICENSE).
+memory = kmalloc(5 * 1024 * 1024, GFP_KERNEL);
+memset(memory, 0, 5 * 1024 * 1024);
+```
+
+Take a VirtualBox snapshot before running it. Then build and load it inside the
+disposable VM:
+
+```bash
+cd ~/kernel-modules/kernel_module_unsafe
+make
+sudo insmod ./unsafe_driver.ko
+```
+
+On the system used for this study, the 5 MiB request fails and `kmalloc()`
+returns `NULL`. A correct driver would stop and return `-ENOMEM`. This module
+continues and uses the invalid pointer. This causes a kernel fault while
+`insmod` is loading the module, so Linux kills the `insmod` process.
+
+The VM normally remains running. The example shows why a driver must always
+check whether a memory allocation succeeded before using the memory.
+
+## Project structure
 
 ```text
 comparison/
 ├── README.md
-├── monolithic/kernel_module/
-│   ├── Makefile
-│   ├── memory_driver.c
-│   └── README.md
-└── scripts/create_lubuntu_vm.sh
+├── monolithic/
+│   ├── kernel_module_safe/
+│   │   ├── Makefile
+│   │   ├── README.md
+│   │   └── safe_driver.c
+│   └── kernel_module_unsafe/
+│       ├── Makefile
+│       ├── README.md
+│       └── unsafe_driver.c
+└── scripts/
+    └── create_lubuntu_vm.sh
 ```
+
+## License
+
+This project is available under the repository [MIT License](../LICENSE).

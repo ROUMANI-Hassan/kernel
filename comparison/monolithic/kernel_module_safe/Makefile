@@ -1,4 +1,4 @@
-obj-m += memory_driver.o
+obj-m += safe_driver.o
 
 KERNEL_BUILD := /lib/modules/$(shell uname -r)/build
 

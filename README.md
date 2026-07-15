@@ -20,10 +20,10 @@ The main subjects are:
 
 ## Current work
 
-The first study is in [`comparison/`](comparison/). It contains a real Linux
-memory module and documentation comparing the three kernel architectures. The
-current experiment shows normal allocation, safe allocation failure, and a
-VM-only faulty-driver path.
+The first study is in [`comparison/`](comparison/). It contains two minimal
+Linux kernel modules and documentation comparing the three architectures. One
+module demonstrates safe memory handling; the other deliberately stops only a
+virtual-machine kernel.
 
 Future studies will be added as separate folders. Each folder will document
 the question I studied, the code I wrote, the results I observed, and what I
