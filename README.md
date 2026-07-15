@@ -1,8 +1,13 @@
-# Kernel studies
+# My kernel studies
 
-This repository is a practical study of operating-system kernels. Its purpose
-is to move from architecture concepts to small experiments that can be built,
-run, observed, and explained.
+This repository documents my personal study of operating-system kernels. I am
+using it to record what I learn over time, test ideas with small practical
+examples, correct my understanding when results are different from what I
+expected, and show my progress.
+
+This is a learning project, not a finished reference guide. The explanations
+and examples will develop as I study more kernel concepts and implement new
+experiments.
 
 The main subjects are:
 
@@ -20,7 +25,9 @@ memory module and documentation comparing the three kernel architectures. The
 current experiment shows normal allocation, safe allocation failure, and a
 VM-only faulty-driver path.
 
-Future studies will be added as separate folders under this repository.
+Future studies will be added as separate folders. Each folder will document
+the question I studied, the code I wrote, the results I observed, and what I
+learned from the experiment.
 
 ## Safety
 
