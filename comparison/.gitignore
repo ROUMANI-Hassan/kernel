@@ -6,3 +6,5 @@ build/
 *.mod.c
 modules.order
 Module.symvers
+user_stack_overflow
+kernel_message_client

@@ -20,10 +20,10 @@ The main subjects are:
 
 ## Current work
 
-The first study is in [`comparison/`](comparison/). It contains two minimal
-Linux kernel modules and documentation comparing the three architectures. One
-module demonstrates safe memory handling; the other deliberately stops only a
-virtual-machine kernel.
+The first study is in [`comparison/`](comparison/). It contains small Linux
+kernel modules and documentation comparing the three architectures. The first
+example studies memory handling. The next runs the same stack-overflow error in
+user space and kernel space to compare their isolation boundaries.
 
 Future studies will be added as separate folders. Each folder will document
 the question I studied, the code I wrote, the results I observed, and what I
