@@ -29,6 +29,10 @@ Future studies will be added as separate folders. Each folder will document
 the question I studied, the code I wrote, the results I observed, and what I
 learned from the experiment.
 
+Independent projects are stored in [`examples/`](examples/). The first example
+is a Linux kernel module that monitors a real thermal zone and reports its
+status through procfs.
+
 ## Safety
 
 Kernel experiments can stop or damage a running operating system. Unsafe tests
